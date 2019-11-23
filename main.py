@@ -34,91 +34,8 @@ def compress( inputFile, outputFile ):
   # is 'uint8', meaning that each component is an 8-bit unsigned
   # integer.
 
-  startTime = time.time()
- 
-  outputBytes = np.array([],dtype=np.uint16)
-
   img = netpbm.imread( inputFile ).astype('uint8')
-  channels = 0
-  #gen dictionary for pixel values to 255
-  baseDict = genDict()
-
-  #get number of channels
-  if len(img.shape) == 2:
-    channels = 1
-  elif len(img.shape) == 3:
-    channels = 3
-  else:
-    print("Unknown image format")
-    return
-
-  imgArray = []
-  # if 1 channel, loop through every pixel
-  if (channels == 1):
-    for x in range(img.shape[0]):
-      for y in range(img.shape[1]):
-        
-        #initial pixel, no predition
-        if(x == 0 and y == 0):
-          imgArray.append(img[0,0])
-
-        else:
-          # make prediction using previous pixel
-          if(x == 0):
-            imgArray.append(img[x, y] - img[x, y-1])
-          else:
-            imgArray.append(img[x, y] - img[x-1, y])
-
-  # image has 3 channels, loop through all pixels and channels
-  else:
-    for x in range(img.shape[0]):
-      for y in range(img.shape[1]):
-        for c in range(img.shape[2]):
-
-          #Initial pixel no prediction
-          if(x == 0 and y ==0):
-            imgArray.append(img[0, 0, c])
-
-          else:
-            # Create prediction based on previous pixel values 
-            if(x == 0):
-              imgArray.append(img[x, y, c] - img[x, y-1, c])
-            else:
-              imgArray.append(img[x, y, c] - img[x-1, y, c])
-
-  # The number of values that will be in the output file
-  numBytes = img.shape[0] * img.shape[1] * channels
-
-
-  #LZW Compression
-  s = ()
-  s = imgArray[0]
-  nextDictIndex = len(baseDict)
-
-  # loop through all the predicted values
-  for i in range(1, numBytes):
-
-    x = imgArray[i]
-    if s+x in baseDict:
-      s = s+x
-    else:
-      #Push s to output and add s+x to the dictionary
-      np.append(outputBytes, np.uint16(baseDict[s]))
-      baseDict[s+x] = nextDictIndex
-      nextDictIndex += 1
-      s = x
-
-  np.append(outputBytes, np.uint16(baseDict[s]))
-
-
-
-
-    
-
-
-
-          
-
+  
   # Compress the image
   #
   # REPLACE THIS WITH YOUR OWN CODE TO FILL THE 'outputBytes' ARRAY.
@@ -131,6 +48,78 @@ def compress( inputFile, outputFile ):
   # one piece for the single-channel case and one piece for the
   # multi-channel case.
 
+  startTime = time.time()
+ 
+  # outputBytes = np.array([],dtype = np.uint16)
+  tempBytes = []
+  channels = 0
+
+  # -256 - 0 maps to 0 - 256, 1-255 mapps to 257 - 511
+  baseDict = genDict()
+  
+  if len(img.shape) == 2:
+    channels = 1
+  elif len(img.shape) == 3:
+    channels = 3
+  else:
+    print("unrecognized image format")
+    return 
+
+  pArray = []
+
+  #if 1 channel, loop through every pixel
+  if (channels == 1):
+    for x in range(img.shape[0]):
+      for y in range(img.shape[1]):
+        
+        #initial pixel, don't make prediction
+        if (x == 0 and y == 0):
+          pArray.append(int(img[0, 0]))
+        else:
+          # make prediction using previous pixel
+          if x == 0 :
+            pArray.append(int(img[x, y]) - int(img[x, y-1]))
+          else:
+            pArray.append(int(img[x, y]) - int(img[x - 1, y])) 
+
+  # Image has 3 channels, loop through all pixels and channels          
+  else:
+    for x in range(img.shape[0]):
+      for y in range(img.shape[1]):
+        for c in range(img.shape[2]):
+          
+          #Initial pixel, no prediction
+          if(x == 0 and y == 0):
+            pArray.append(int(img[0, 0, c]))
+          else:
+
+            if x == 0:
+              pArray.append(int(img[x, y, c]) - int(img[x, y - 1, c]))
+            else:
+              pArray.append(int(img[x, y, c]) - int(img[x -1, y, c]))
+  
+  # number of symbols to encode
+  numSymbols = img.shape[0] * img.shape[1] * channels
+
+  # LZW Compression
+  s = str(pArray[0])
+  nextDictIndex = len(baseDict)
+
+  for i in range(1,numSymbols):
+    x = str(pArray[i])
+
+    if s + ","  + x in baseDict:
+      s = s + "," + x
+    else:
+
+      tempBytes.append(baseDict[s])
+      baseDict[s + "," + x] = np.uint16(nextDictIndex)
+      nextDictIndex += 1
+      s = x
+    
+  tempBytes.append(baseDict[s])
+  outputBytes = np.array(tempBytes,dtype=np.uint16)
+
   endTime = time.time()
 
   # Output the bytes
@@ -139,27 +128,32 @@ def compress( inputFile, outputFile ):
   # the rows, columns, channels so that the image shape can be
   # reconstructed.
 
+  stringImgShape = []
+
+  for num in img.shape:
+    stringImgShape.append(str(num))
+
+
   outputFile.write( '%s\n'       % headerText )
-  outputFile.write( '%d %d %d\n' % (img.shape[0], img.shape[1], img.shape[2]) )
+  outputFile.write( ' '.join(stringImgShape) + '\n' )
   outputFile.write( outputBytes )
 
   # Print information about the compression
   
-  inSize  = img.shape[0] * img.shape[1] * img.shape[2]
+  inSize  = numSymbols
   outSize = len(outputBytes)
 
   sys.stderr.write( 'Input size:         %d bytes\n' % inSize )
   sys.stderr.write( 'Output size:        %d bytes\n' % outSize )
   sys.stderr.write( 'Compression factor: %.2f\n' % (inSize/float(outSize)) )
   sys.stderr.write( 'Compression time:   %.2f seconds\n' % (endTime - startTime) )
-
+  
 
 def genDict():
   myDict = {}
-  for i in range(256):
-    myDict[(i)] = i
+  for i in range(-256,256):
+    myDict[str(i)] = np.uint16(256 + i)
   return myDict
-
 
 
 # Uncompress an image
@@ -211,11 +205,8 @@ def uncompress( inputFile, outputFile ):
 #
 # where {flag} is one of 'c' or 'u' for compress or uncompress and
 # either filename can be '-' for standard input or standard output.
-inputFile = open('images/noise.pnm','rb')
-outputFile = open('noisec.pnm','wb')
-compress(inputFile,outputFile)
-#ODO UNCOMMENT THIS to reset command capabilities
-"""
+
+
 if len(sys.argv) < 4:
   sys.stderr.write( 'Usage: main.py c|u {input image filename} {output image filename}\n' )
   sys.exit(1)
@@ -251,4 +242,3 @@ elif sys.argv[1] == 'u':
 else:
   sys.stderr.write( 'Usage: main.py c|u {input image filename} {output image filename}\n' )
   sys.exit(1)
-"""
