@@ -50,75 +50,53 @@ def compress( inputFile, outputFile ):
 
   startTime = time.time()
  
-  # outputBytes = np.array([],dtype = np.uint16)
-  tempBytes = []
-  channels = 0
+  outputBytes = bytearray()
 
-  # -256 - 0 maps to 0 - 256, 1-255 mapps to 257 - 511
   baseDict = genDict()
-  
-  if len(img.shape) == 2:
+
+  pixelValues = []
+
+  if (len(img.shape) == 2):
     channels = 1
-  elif len(img.shape) == 3:
-    channels = 3
-  else:
-    print("unrecognized image format")
-    return 
-
-  pArray = []
-
-  #if 1 channel, loop through every pixel
-  if (channels == 1):
     for x in range(img.shape[0]):
       for y in range(img.shape[1]):
-        
-        #initial pixel, don't make prediction
-        if (x == 0 and y == 0):
-          pArray.append(int(img[0, 0]))
-        else:
-          # make prediction using previous pixel
-          if x == 0 :
-            pArray.append(int(img[x, y]) - int(img[x, y-1]))
-          else:
-            pArray.append(int(img[x, y]) - int(img[x - 1, y])) 
-
-  # Image has 3 channels, loop through all pixels and channels          
-  else:
+        pixelValues.append(img[x,y])
+  
+  elif (len(img.shape) == 3):
+    channels = 3
     for x in range(img.shape[0]):
       for y in range(img.shape[1]):
         for c in range(img.shape[2]):
-          
-          #Initial pixel, no prediction
-          if(x == 0 and y == 0):
-            pArray.append(int(img[0, 0, c]))
-          else:
+          pixelValues.append(img[x,y,c])
+  else:
+    print("invalid image format, exiting")
+    quit()
+  predictions = []
+  predictions.append(pixelValues.pop(0))
 
-            if x == 0:
-              pArray.append(int(img[x, y, c]) - int(img[x, y - 1, c]))
-            else:
-              pArray.append(int(img[x, y, c]) - int(img[x -1, y, c]))
-  
-  # number of symbols to encode
-  numSymbols = img.shape[0] * img.shape[1] * channels
+  for i in pixelValues:
+    predictions.append(int(pixelValues[i]) - int(pixelValues[i-1]))
 
-  # LZW Compression
-  s = str(pArray[0])
-  nextDictIndex = len(baseDict)
-
-  for i in range(1,numSymbols):
-    x = str(pArray[i])
-
-    if s + ","  + x in baseDict:
-      s = s + "," + x
-    else:
-
-      tempBytes.append(baseDict[s])
-      baseDict[s + "," + x] = np.uint16(nextDictIndex)
-      nextDictIndex += 1
-      s = x
     
-  tempBytes.append(baseDict[s])
-  outputBytes = np.array(tempBytes,dtype=np.uint16)
+
+  numSymbols = img.shape[0] * img.shape[1] * channels
+  nextIndex = len(baseDict)
+
+  s = ""
+
+  for i in range(numSymbols):
+    x = str(predictions[i])
+
+    if s + x in baseDict:
+      s = s + x
+
+    else:
+      outputBytes.append((int(baseDict[s]) >> 8) & 0xFF)
+      outputBytes.append(int(baseDict[s]) & 0xFF)
+    
+      baseDict[s + x] = nextIndex
+      nextIndex += 1
+      s = x
 
   endTime = time.time()
 
@@ -127,20 +105,16 @@ def compress( inputFile, outputFile ):
   # Include the 'headerText' to identify the type of file.  Include
   # the rows, columns, channels so that the image shape can be
   # reconstructed.
-
-  stringImgShape = []
-
-  for num in img.shape:
-    stringImgShape.append(str(num))
-
+  for i in range(len(img.shape)):
+    shapeString = ' '.join(str(img.shape[i]))
 
   outputFile.write( '%s\n'       % headerText )
-  outputFile.write( ' '.join(stringImgShape) + '\n' )
+  outputFile.write( shapeString + '\n')
   outputFile.write( outputBytes )
 
   # Print information about the compression
   
-  inSize  = numSymbols
+  inSize  = img.shape[0] * img.shape[1] * img.shape[2]
   outSize = len(outputBytes)
 
   sys.stderr.write( 'Input size:         %d bytes\n' % inSize )
@@ -148,13 +122,11 @@ def compress( inputFile, outputFile ):
   sys.stderr.write( 'Compression factor: %.2f\n' % (inSize/float(outSize)) )
   sys.stderr.write( 'Compression time:   %.2f seconds\n' % (endTime - startTime) )
   
-
 def genDict():
   myDict = {}
-  for i in range(-256,256):
-    myDict[str(i)] = np.uint16(256 + i)
+  for i in range(-255,256):
+    myDict[str(i)] = i + 255
   return myDict
-
 
 # Uncompress an image
 
