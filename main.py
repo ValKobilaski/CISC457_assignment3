@@ -203,6 +203,7 @@ def uncompress( inputFile, outputFile ):
       x = i // columns
       y = i % columns
       img[x,y] = num
+      i += 1
     endTime = time.time()
 
   # Output the image
