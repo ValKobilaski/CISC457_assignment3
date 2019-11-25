@@ -52,7 +52,10 @@ def compress( inputFile, outputFile ):
  
   outputBytes = bytearray()
 
-  baseDict = genDict()
+  baseDict = {}
+
+  for i in range(512):
+    baseDict[str(i)] = i
 
   pixelValues = []
 
@@ -72,10 +75,10 @@ def compress( inputFile, outputFile ):
     print("invalid image format, exiting")
     quit()
   predictions = []
-  predictions.append(pixelValues.pop(0))
+  predictions.append(pixelValues.pop(0) + 255)
 
   for i in pixelValues:
-    predictions.append(int(pixelValues[i]) - int(pixelValues[i-1]))
+    predictions.append(int(pixelValues[i]) - int(pixelValues[i-1]) + 255)
 
     
 
@@ -105,16 +108,17 @@ def compress( inputFile, outputFile ):
   # Include the 'headerText' to identify the type of file.  Include
   # the rows, columns, channels so that the image shape can be
   # reconstructed.
-  for i in range(len(img.shape)):
-    shapeString = ' '.join(str(img.shape[i]))
 
   outputFile.write( '%s\n'       % headerText )
-  outputFile.write( shapeString + '\n')
+  if (channels == 1):
+    outputFile.write( '%d %d\n' %(img.shape[0], img.shape[1]))
+  else:
+    outputFile.write( '%d %d %d\n' % (img.shape[0], img.shape[1], img.shape[2]))
   outputFile.write( outputBytes )
 
   # Print information about the compression
   
-  inSize  = img.shape[0] * img.shape[1] * img.shape[2]
+  inSize  = img.shape[0] * img.shape[1] * channels
   outSize = len(outputBytes)
 
   sys.stderr.write( 'Input size:         %d bytes\n' % inSize )
@@ -122,11 +126,6 @@ def compress( inputFile, outputFile ):
   sys.stderr.write( 'Compression factor: %.2f\n' % (inSize/float(outSize)) )
   sys.stderr.write( 'Compression time:   %.2f seconds\n' % (endTime - startTime) )
   
-def genDict():
-  myDict = {}
-  for i in range(-255,256):
-    myDict[str(i)] = i + 255
-  return myDict
 
 # Uncompress an image
 
@@ -139,8 +138,15 @@ def uncompress( inputFile, outputFile ):
     sys.exit(1)
     
   # Read the rows, columns, and channels.  
+  line = []
+  line = [int(x) for x in inputFile.readline().split()]
+  rows = int(line[0])
+  columns = int(line[1])
 
-  rows, columns, channels = [ int(x) for x in inputFile.readline().split() ]
+  if len(line) == 3:
+    channels = 3
+  else:
+    channels = 1
 
   # Read the raw bytes.
 
@@ -154,13 +160,50 @@ def uncompress( inputFile, outputFile ):
 
   img = np.empty( [rows,columns,channels], dtype=np.uint8 )
 
-  byteIter = iter(inputBytes)
-  for y in range(rows):
-    for x in range(columns):
-      for c in range(channels):
-        img[y,x,c] = byteIter.next()
+  baseDict = {}
+  for i in range(512):
+    baseDict[i] = str(i) + ','
 
-  endTime = time.time()
+  byteIterator = iter(inputBytes)
+
+  fileValues = []
+  for i in range(len(inputBytes) // 2 - 1):
+    fileValues .append(int(byteIterator.next()<< 8) + int(byteIterator.next()))
+
+  s = baseDict[fileValues.pop(0)]
+  output = s
+
+  nextIndex = len(baseDict)
+
+  for val in fileValues:
+    if val in baseDict:
+      t = baseDict[val]
+    else:
+      t = s + s.split(',')[0] + ','
+    output += t
+    baseDict[nextIndex] = s + t.split(',')[0] + ','
+    s = t
+    nextIndex += 1
+
+  output = output.split(',')
+  output.pop(-1)
+  for i in range(1,len(output)):
+    output[i] += output[i-1]
+
+  i = 0
+  if(channels == 3):
+    for num in output:
+      x = i // (columns * channels ) % channels
+      y = i // channels % columns
+      c = i % channels
+      img[x,y,c] = num
+      i += 1
+  else:
+    for num in output: 
+      x = i // columns
+      y = i % columns
+      img[x,y] = num
+    endTime = time.time()
 
   # Output the image
 
